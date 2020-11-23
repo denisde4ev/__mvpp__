@@ -1,7 +1,7 @@
 #!/bin/bash -u
-# Waring: Obviusly this script is only interactive and shoud not be used in backgaund automation
-set -e # ?
-set -u # no - breaks test for [[ -v $var ]] then i test [[ $var ]]
+# Waring: Obviusly this script is only interactive and shoud not be used in carefully in script
+set -e # Exit immediately if a command exits with a non-zero status.
+set -u # Treat unset variables as an error when substituting.
 declare IFS= # TODO: check if this is good practice
 
 
@@ -12,16 +12,19 @@ declare IFS= # TODO: check if this is good practice
 
 dirname-(){ dirname -- "$@"; }
 basename-(){ basename -- "$@"; }
+
 echoerr(){ >&2 echo "$@"; }
+TODO (){ echoerr $'\e[1;33mTODO:\e[m' "$@"; exit -1; }
+err (){ echoerr $'\e[1;31mERROR:\e[m' "$@"; exit -1; }
 
-TODO(){ echoerr $'\e[1;33mTODO:\e[m '"$@"; exit -1; }
-
-v=--verbose # = verbose
-i=--interactive # = interactive
+v=--verbose
+i=--interactive
 dbg= # = debug
+# __mvPP_dryrun is keept from the envirometn
 
 for arg_i; do
 	case $arg_i in
+		--) shift;break;;
 		--help) TODO write help message; exit 1;return 1;shift;;
 		--dbg|-x) dbg=y;shift;;
 		--dry-run|--dry|-d) __mvPP_dryrun=y; shift;;
@@ -29,20 +32,25 @@ for arg_i; do
 		--no-interactive|-I) i=; shift;;
 		--verbose|-v) v=--verbose; shift;;
 		--interactive|-i) i=--interactive; shift;;
-		--) shift;break;;
-		[^-]*|'') break;;
+		[^-]*|'') break;; # stop when no more arguments
 		
-		-*) echoerr "invalid option --  ${arg_i@Q}"; exit 1;;
-		--) echoerr "unrecognized option ${arg_i@Q}"; exit 1;;
+		--*) echoerr "unrecognized option ${arg_i@Q}"; exit 1;;
+		-*) echoerr "invalid option -- ${arg_i@Q}"; exit 1;;
 	esac
 done
-[[ $dbg ]] && set -x && echoerr "${@@A}"
 
-[[ ! -v __mvPP_dryrun || $0 = mv+(++|PP|pp) ]] || eval 'function '{rmdir,mv,mkdir}' () { echo " $ ${FUNCNAME%-} ${@@Q}";};'
-# /|\ eval 'exit(){ command exit 123; };'
-# tests should always be for valid/everything-OK conditions, if something goes wrong fallback should be safer
+exit-dry () { exit "$@"; }
+[[ $dbg ]] && {
+	echoerr "${@@A}"
+	exit-dry () { echoerr " $ exit" "${@@Q}"; }
+	set -x
+}
+
+[[ -z __mvPP_dryrun || $0 = @(mv|cp)+(++|PP|pp) ]] || eval 'function '{rmdir,mv,mkdir}' () { echo " $ $FUNCNAME" "${@@Q}"; }; '
+# [[ $0 = cp?([^a-zA-Z])* ]] # todo consider if is usefull
 
 mv-(){ mv $v $i -- "$@"; }
+# mvt-(){ mv $v $i --target-directory="${@:$#}" -- "${@:1:$#}"; }
 mvT-(){ mv $v $i --no-target-directory -- "$@"; }
 mkdir-(){ mkdir $v --parents -- "$@"; }
 rmdir-(){ rmdir $v --parents --ignore-fail-on-non-empty -- "$@"; }
@@ -52,10 +60,9 @@ rmdir-(){ rmdir $v --parents --ignore-fail-on-non-empty -- "$@"; }
 # TODO 'IF IS A FILE OR DIRECTORY does SOURCE and TARGET has to be without target directory - deside and rewrite'
 
 # [[ -z ${__mvPP_dryrun:-''} ]] && {
-	# [[ $# != 2 ]] && { echoerr 'Usage: requires 2 arguments - mv++ <SOURCE> <TARGET>'; exit 1; }
-	[[ $# != 2 ]] && { mv |& sed -e 's/\bmv\b/mv++/g'; exit 1; } # lazy error printing...
-	[[ $1 = $2 ]] && { echoerr 'Error: SOURCE and TARGET are the exact same file'; exit 1; }
-	[[ ! -e $1 ]] && { echoerr 'Error: SOURCE file must exist'; exit 1; }
+	[[ $# != 2 ]] && { err 'only 1 SOURCE is supported'; exit-dry 1; }
+	[[ $1 = $2 ]] && { err 'SOURCE and TARGET are the exact same file'; exit-dry 1; }
+	[[ ! -e $1 ]] && { err 'SOURCE file must exist'; exit-dry 1; }
 	# test -e # FILE exists
 # }
 
@@ -74,7 +81,9 @@ confirm(){
 	fi
 }
 
-[[ $1 = /* || $2 = /* ]] && { echoerr 'Error: not deigned to be used for absolute path'; confirm 'Try anyway' n || exit 1; } ## TODO: deside what shoud do for absolute path!
+# [[ $1 = /* || $2 = /*  && ]] && { eerr 'not deigned to be used for absolute path'; confirm 'Try anyway' n || exit 1; } ## TODO: deside what shoud do for absolute path!
+[[ ( $1 = /* || $2 = /* ) && ${1:0:1} != "${2:0:1}" ]] && { eerr 'SOURCE and TARGET are with different type of path / absolute and ./ relative'; confirm 'Try anyway' n || exit 1; }
+## TODO: deside what shoud do for absolute path when "rmdir -p"
 
 retry(){
 	TODO "implement 'retry' fn."
