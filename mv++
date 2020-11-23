@@ -1,0 +1,149 @@
+#!/bin/bash -u
+# Waring: Obviusly this script is only interactive and shoud not be used in backgaund automation
+set -e # ?
+set -u # no - breaks test for [[ -v $var ]] then i test [[ $var ]]
+declare IFS= # TODO: check if this is good practice
+
+
+
+## TODO: if --target-directory=${a/%*(\/)/@}
+
+## TODO: track what will happein for parrent dir arguments ../../etc.
+
+dirname-(){ dirname -- "$@"; }
+basename-(){ basename -- "$@"; }
+echoerr(){ >&2 echo "$@"; }
+
+TODO(){ echoerr $'\e[1;33mTODO:\e[m '"$@"; exit -1; }
+
+v=--verbose # = verbose
+i=--interactive # = interactive
+dbg= # = debug
+
+for arg_i; do
+	case $arg_i in
+		--help) TODO write help message; exit 1;return 1;shift;;
+		--dbg|-x) dbg=y;shift;;
+		--dry-run|--dry|-d) __mvPP_dryrun=y; shift;;
+		--no-verbose|-V) v=; shift;;
+		--no-interactive|-I) i=; shift;;
+		--verbose|-v) v=--verbose; shift;;
+		--interactive|-i) i=--interactive; shift;;
+		--) shift;break;;
+		[^-]*|'') break;;
+		
+		-*) echoerr "invalid option --  ${arg_i@Q}"; exit 1;;
+		--) echoerr "unrecognized option ${arg_i@Q}"; exit 1;;
+	esac
+done
+[[ $dbg ]] && set -x && echoerr "${@@A}"
+
+[[ ! -v __mvPP_dryrun || $0 = mv+(++|PP|pp) ]] || eval 'function '{rmdir,mv,mkdir}' () { echo " $ ${FUNCNAME%-} ${@@Q}";};'
+# /|\ eval 'exit(){ command exit 123; };'
+# tests should always be for valid/everything-OK conditions, if something goes wrong fallback should be safer
+
+mv-(){ mv $v $i -- "$@"; }
+mvT-(){ mv $v $i --no-target-directory -- "$@"; }
+mkdir-(){ mkdir $v --parents -- "$@"; }
+rmdir-(){ rmdir $v --parents --ignore-fail-on-non-empty -- "$@"; }
+
+
+
+# TODO 'IF IS A FILE OR DIRECTORY does SOURCE and TARGET has to be without target directory - deside and rewrite'
+
+# [[ -z ${__mvPP_dryrun:-''} ]] && {
+	# [[ $# != 2 ]] && { echoerr 'Usage: requires 2 arguments - mv++ <SOURCE> <TARGET>'; exit 1; }
+	[[ $# != 2 ]] && { mv |& sed -e 's/\bmv\b/mv++/g'; exit 1; } # lazy error printing...
+	[[ $1 = $2 ]] && { echoerr 'Error: SOURCE and TARGET are the exact same file'; exit 1; }
+	[[ ! -e $1 ]] && { echoerr 'Error: SOURCE file must exist'; exit 1; }
+	# test -e # FILE exists
+# }
+
+tmp=".mv++_$$~" # temp name extension for swapping files
+
+
+yn='[y/n]' # yes/no vairable used for replacement
+confirm(){
+	local p # p = prompt
+	# echoerr -n "$1 ${yn^${2:-y}}"
+	read -p "$1 ${yn^^${2:-y}} " p &&
+	# [[ $p = [Yy]* || ( ! $2 && ! $p ) ]]
+	if [[ ${2:-y} = [Nn]* ]]
+	then [[ $p = [Yy]* ]]
+	else [[ $p = ?([Yy]*) ]]
+	fi
+}
+
+[[ $1 = /* || $2 = /* ]] && { echoerr 'Error: not deigned to be used for absolute path'; confirm 'Try anyway' n || exit 1; } ## TODO: deside what shoud do for absolute path!
+
+retry(){
+	TODO "implement 'retry' fn."
+}
+
+inner_dir(){
+	mv- "$1" "${1%/}$tmp" &&
+	# mkdir- "$(dirname- "$2")" &&
+	mkdir- "${2%/*}" && # dont use `dirname- $2` since second argument coud be 'foo/'
+	if [[ $2 = */ ]]
+	then mv- "${1%/}$tmp" "${2%/*}/$(basename -- "$1")" # todo: maby unnessesery "${2%/*}/" ?
+	# 1=asd/
+	# f=asd.tmp
+	
+	else mv- "${1%/}$tmp" "$2"
+	fi
+}
+
+upper_dir(){
+	mv- "$1" "${2%/}$tmp" &&
+	rmdir- "$(dirname- "${1#./}")" && # WARING: this will fail for apsolute path AND also for ../parrent-dirs
+	mv- "${2%/}$tmp" "$2"
+}
+
+swap(){
+	mvT- "$1" "${1%/}$tmp" &&
+	mvT- "$2" "$1" &&
+	mvT- "${1%/}$tmp" "$2"
+}
+
+main(){
+	# TODO: check which "mv" needs --not-target-directory
+
+	[[ $2 = ${1%/}/* ]] && {
+		confirm 'move in INNER directory with saame name?' || retry "$@"
+		inner_dir "$@"
+		return $? # used because 'exec <cmd>' wont exit if program fails, TODO: check if is true in script
+	}
+
+	[[ $1 = ${2%/}/* ]] && {
+		confirm 'move in UPPER directory with saame name?' || retry "$@"
+		[[ $1 == $(echo "${2%/}"/*) ]] || { # TODO: better check !!!  to work with more then 1 upper dir  example: mv++ a/a/a a
+			echoerr 'WARING: SOURCE is not directly only content in TARGET directory';
+			confirm 'try anyway?' n || return $?;
+		}
+		
+		upper_dir "$@" # TODO: loop untill find emty dir with 1 file, ask confirm add send to upper_dir fn.
+		return $?
+	}
+
+	[[ -e $2 ]] && { # test -e # FILE exists
+		confirm 'swap files?' || retry "$@"
+		swap "$@"
+		return $?
+	}
+
+	# test -d # FILE exists and is a directory
+	[[ $2 = */* && ! -d ${2%/*} ]] && { # dont use dirname- since it can be target directory ( must ends with '/' | mv++ foo 'bar/' ) 
+		confirm 'make TARGET dirname and use NORMAL MV?' &&
+		mkdir- "${2%/*}" &&
+		mv- "$1" "$2"
+		return $?
+	}
+	
+
+	confirm 'use normal mv?' && {
+		mv- "$1" "$2"
+		return $?
+	}
+	echoerr 'there is nothing to do, exiting'
+}
+main "$@"
