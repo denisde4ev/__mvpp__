@@ -3,22 +3,20 @@
 #
 # Waring: Obviusly this script is only interactive and shoud not be used in background scripts
 #
-	
-set -e # Exit immediately if a command exits with a non-zero status.
-set -u # Treat unset variables as an error when substituting.
+
+set -eu
 IFS=''
 
 echoerr(){ echo >&2 "$@"; }
 exit-dry(){ exit "$@"; } # function is changed when --drry-run argument passed
-TODO(){ echoerr $'\e[1;33mTODO:\e[m' "$@"; exit-dry 2; }
-err(){ echoerr $'\e[1;31mERROR:\e[m' "$1"; [[ ${2:-''} = 0 ]] || exit-dry "${2:-1}"; }        # ; return "${2:-1}"; } # return status is never used as condition
+TODO(){ echoerr $'\e[1;33mTODO:\e[m' "$@"; exit-dry 5; }
+err(){ echoerr $'\e[1;31mERROR:\e[m' "$1"; [[ ${2:-''} = 0 ]] || exit-dry "${2:-1}"; }
 warn(){ echoerr $'\e[1;36mWARNING:\e[m' "$@"; }
 info(){ echoerr $'\e[1;34mINFO:\e[m' "$@"; }
 
 yn='[y/n]' # used for string replacement bellow
 confirm(){ # confirm(prompt_questin, default=y)
-	local p # p = prompt
-	# echoerr -n "$1 ${yn^${2:-y}}"
+	local p
 	read -p "$1 ${yn^^${2:-y}} " p &&
 	# [[ $p = [Yy]* || ( ! $2 && ! $p ) ]]
 	if [[ ${2:-y} = [Nn]* ]]
@@ -32,7 +30,7 @@ v=--verbose
 i=--interactive
 debug=0
 # __mvPP_dryrun is keept from the envirometn
-tmp=".mv++_$$~" # temp name for swapping files 
+tmp=.mv++_$$~ # temp name for swapping files
 
 for _i; do
 	case $_i in
@@ -51,25 +49,44 @@ for _i; do
 		# TODO: support multiple arguments with 1 dash, example: -vid => --vefbose --interactive --dey-run
 	esac
 done
+(( $# )) || TODO write help message
 : ${__mvPP_dryrun:=0} # get it from arguments OR enviroment and set to false if not set
 
 
-dirname-(){ dirname -- "$@"; }
-basename-(){ basename -- "$@"; }
+d(){ dirname -- "$@";}
+b(){ basename -- "$@";}
 
-mv-(){ mv $v $i -- "$@"; }
+mv-(){ mv $v $i -- "$@";}
 # mvt-(){ mv $v $i --target-directory="${@:$#:1}" -- "${@:1:$#-1}"; }
 mvT-(){ mv $v $i --no-target-directory -- "$@"; }
 mkdir-(){ mkdir $v --parents -- "$@"; }
 rmdir-(){ rmdir $v --parents --ignore-fail-on-non-empty -- "$@"; }
 
-onlydir(){ [[ $1 = "$(echo "${2%/}"/*)"?(/*) ]]; }
-# does $2 contain only $1 (sub directory included)
-# todo: berrer explain
+isonlydir(){ # checks if $2 contain only $1 (sub directory included) # todo: berrer explain this fn
+	local t=("${2%/}"/*)
+	[[ ${#t[@]} = 1 && -e $t && ${1%/} = "${t#./}"?(/*) ]]
+}
 # I think its done: TODO: loop untill find emty dir with 1 file, ask confirm add send to upper_dir fn.  # is it nessesary?
 
+isemptydir(){ # checks is the directory empty
+	local t=("${1%/}"/*)
+	[[ -d $1 && ${#t[@]} = 1 && $t = "${1%/}/*" && ! -e $t ]]
+}
+
+ardn(){ # Ask to Rmdir DirName
+	local t=$(d "$1")
+	local m=
+	isemptydir "$t" || return 0
+	[[ $t = . ]] && t=../${PWD##*/} && m=' (curretn directory)'
+	confirm "delete LEFTOVER dirnames of SOURCE$m" || return 0 # dry-run replace relyes on this line bellow
+	rmdir- "$t"
+}
+
+(( __mvPP_dryrun )) &&
+	eval 'function '{rmdir,mv,mkdir,exit-dry}' () { echo " $ ${FUNCNAME%-dry}" "${@@Q}"; }; ' &&
+	eval "$(_i=$(declare -f ardn); echo "${_i/'isemptydir "$t"'/'warn "$FUNCNAME fn may differ in not dry-run"; isonlydir "$1" "$t" && [[ "$t" != "$(d "$2")" ]]'}")"
+
 (( debug )) && echoerr "${@@A}" && set -x
-(( __mvPP_dryrun )) && eval 'function '{rmdir,mv,mkdir,exit-dry}' () { echo " $ ${FUNCNAME%-dry}" "${@@Q}"; }; '
 
 [[ $# != 2 ]] && err 'only 1 SOURCE argument is supported'
 if [[ $1 = @(?(*/).?(.)?(/*)) || $2 = ?(*/).?(.)?(/*) ]]; then # if contain .. or . in SOURCE or TARGET
@@ -79,7 +96,6 @@ if [[ $1 = @(?(*/).?(.)?(/*)) || $2 = ?(*/).?(.)?(/*) ]]; then # if contain .. o
 	set -- "$source${1##*[^/]}" "$target${2##*[^/]}" ||
 	err 'readling failed'
 	# TODO: test `readlink -e` and '-f'
-	# use "${1##*[^/]}" to keep last forlord slash '/'
 else
 	set -- "${1##+(./)}" "${2##+(./)}" # remove './' example: ./foo OR ./././foo --> foo
 	set -- "${@//\/\//\/}"             # replace '//' with single '/'
@@ -93,26 +109,25 @@ fi
 		target=$(readlink -f -- "$2") &&
 		set -- "$source${1##*[^/]}" "$target${2##*[^/]}" ||
 		{ err 'readling failed' 0; false; }
-	} || 
+	} ||
 	confirm 'Try anyway' n || exit 1
 }
 [[ ! -e $1 ]] && err 'SOURCE file must exist'
-[[ $1 = $2 && $2 != */ ]] && err 'SOURCE and TARGET are the same file'
+[[ ${1%/} = $2 && ( $2 != */ || ${2%/*}/${1##*/} = $2 ) ]] && err 'SOURCE and TARGET are the same file'
 
 
-inner_dir(){ # a/ a/b/c/a
+inner_dir(){
 	mvT- "$1" "${1%/}$tmp" &&
-	mkdir- "${2%/*}" && # dont use `dirname- $2` since second argument coud be 'foo/'
-	mv- "${1%/}$tmp" "$2"
-	# if [[ $2 = */ ]]
-	# then mvT- "${1%/}$tmp" "${2%/*}/$(basename- "$1")" # todo: "${2%/*}/" - foo//bar is the same as foo/bar ?
-	# else mvT- "${1%/}$tmp" "$2"
-	# fi
+	mkdir- "${2%/*}" &&
+	if [[ $2 = */ ]]
+	then mvT- "${1%/}$tmp" "${2%/*}/$(b "$1")" # using basename to remove $tmp  # todo: "${2%/*}/" instead of "$2/" - foo//bar is the same as foo/bar ?
+	else mvT- "${1%/}$tmp" "$2"
+	fi
 }
 
 upper_dir(){
 	mvT- "$1" "${2%/}$tmp" &&
-	rmdir- "$(dirname- "${1#./}")" &&
+	rmdir- "$(d "${1#./}")" &&
 	mvT- "${2%/}$tmp" "$2"
 }
 
@@ -126,6 +141,11 @@ swap(){
 	mvT- "${1%/}$tmp" "$2"
 }
 
+target(){
+	mkdir- "${2%/*}" &&
+	mv- "$@"
+}
+
 main(){
 	# TODO: check which "mv" needs --target-directory
 
@@ -135,7 +155,7 @@ main(){
 	}
 
 	[[ $1 = "${2%/}"/* ]] && confirm 'move in UPPER directory with saame name?' && {
-		onlydir "$@" || {
+		isonlydir "$@" || {
 			warn 'SOURCE is not directly only content in TARGET directory'
 			confirm 'try anyway?' n
 		} && {
@@ -144,10 +164,11 @@ main(){
 		}
 	}
 
-	[[ -e $2 ]] && {
-		[[ -d $1 && -d $2 ]] && confirm 'MERGE directoryes? (no if you want to swap)' && {
+	[[ -e $2 && ${1##*[^/]} = "${2##*[^/]}" ]] && {
+		# will not match if SOUCE or TARGET end with 2 or more at end //
+		[[ -d $1 && -d $2 ]] && confirm 'MERGE directoryes? (no for swap files)' && {
 			merge "$@"
-			return $? 
+			return $?
 		}
 		confirm 'SWAP files?' && {
 			swap "$@"
@@ -155,16 +176,16 @@ main(){
 		}
 	}
 
-	# requires '/' to be in TARGET argument, (just put it at end if you want to force it)
-	# dont use dirname- since it can be target directory ( when ends with '/' | mv++ foo 'bar/' )
-	[[ $2 = */* && ! -d ${2%/*} ]] && confirm 'make TARGET dirname and use regular MV?' && { 
-		mkdir- "${2%/*}" &&
-		mv- "$@"
+	# requires '/' to be in TARGET argument, (just put it at end if you want to force creating TARGET dir)
+	# dont use dirname since it can be target directory ( when ends with '/' | mv++ foo 'bar/' )
+	[[ $2 = */* && ! -d ${2%/*} ]] && confirm 'make TARGET dirname and use regular MV?' && {
+		target "$@"
 		return $?
 	}
 
 	confirm 'use regular MV?' && {
-		mv- "$@"
+		mv- "$@" || return $?
+		ardn "$@"
 		return $?
 	}
 
@@ -174,12 +195,13 @@ main(){
 main "$@"
 exit $?
 
-# TODO: rmdit:
-# rmdir /foo/bar
+# TODO:
+# rmdit:
 # todo: is this bad practice for absolute path ?
 # WARNING: this is not good for absolute path      # AND also for ../../parrent-dirs ( not anymore, because uses readlink )
 # `[[ $@ = . ]] && rmdir ...` was used before readlink # '.' is current directory and shoud not try to remove it?
 
+# TODO: check if $() keeps tabs spaces and NEW LINE
 
 # test -e # FILE exists
 # test -d # FILE exists and is a directory
