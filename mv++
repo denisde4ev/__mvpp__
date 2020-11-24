@@ -63,17 +63,17 @@ mkdir-(){ mkdir $v --parents -- "$@"; }
 rmdir-(){ rmdir $v --parents --ignore-fail-on-non-empty -- "$@"; }
 
 isonlydir(){ # checks if $2 contain only $1 (sub directory included) # todo: berrer explain this fn
-	local t=("${2%/}"/*)
-	[[ ${#t[@]} = 1 && -e $t && ${1%/} = "${t#./}"?(/*) ]]
+	local a=("${2%/}"/*)
+	[[ ${#a[@]} = 1 && -e $a && ${1%/} = "${a#./}"?(/*) ]]
 }
 # I think its done: TODO: loop untill find emty dir with 1 file, ask confirm add send to upper_dir fn.  # is it nessesary?
 
 isemptydir(){ # checks is the directory empty
-	local t=("${1%/}"/*)
-	[[ -d $1 && ${#t[@]} = 1 && $t = "${1%/}/*" && ! -e $t ]]
+	local a=("${1%/}"/*)
+	[[ -d $1 && ${#a[@]} = 1 && $a = "${1%/}/*" && ! -e $t ]]
 }
 
-ardn(){ # Ask to Rmdir DirName
+crmdir(){ # Confirm to Rmdir Dirname
 	local t=$(d "$1")
 	local m=
 	isemptydir "$t" || return 0
@@ -84,7 +84,7 @@ ardn(){ # Ask to Rmdir DirName
 
 (( __mvPP_dryrun )) &&
 	eval 'function '{rmdir,mv,mkdir,exit-dry}' () { echo " $ ${FUNCNAME%-dry}" "${@@Q}"; }; ' &&
-	eval "$(_i=$(declare -f ardn); echo "${_i/'isemptydir "$t"'/'warn "$FUNCNAME fn may differ in not dry-run"; isonlydir "$1" "$t" && [[ "$t" != "$(d "$2")" ]]'}")"
+	eval "$(_i=$(declare -f crmdir); echo "${_i/'isemptydir "$t"'/'warn "$FUNCNAME fn may differ in not dry-run"; isonlydir "$1" "$t" && [[ "$t" != "$(d "$2")" ]]'}")"
 
 (( debug )) && echoerr "${@@A}" && set -x
 
@@ -167,7 +167,8 @@ main(){
 	[[ -e $2 && ${1##*[^/]} = "${2##*[^/]}" ]] && {
 		# will not match if SOUCE or TARGET end with 2 or more at end //
 		[[ -d $1 && -d $2 ]] && confirm 'MERGE directoryes? (no for swap files)' && {
-			merge "$@"
+			merge "$@" || return $?
+			crmdir "$@"
 			return $?
 		}
 		confirm 'SWAP files?' && {
@@ -179,13 +180,14 @@ main(){
 	# requires '/' to be in TARGET argument, (just put it at end if you want to force creating TARGET dir)
 	# dont use dirname since it can be target directory ( when ends with '/' | mv++ foo 'bar/' )
 	[[ $2 = */* && ! -d ${2%/*} ]] && confirm 'make TARGET dirname and use regular MV?' && {
-		target "$@"
+		target "$@" || return $?
+		crmdir "$@"
 		return $?
 	}
 
 	confirm 'use regular MV?' && {
 		mv- "$@" || return $?
-		ardn "$@"
+		crmdir "$@"
 		return $?
 	}
 
