@@ -5,6 +5,7 @@
 #
 
 set -eu
+shopt -s nullglob dotglob
 IFS=''
 
 echoerr(){ echo >&2 "$@"; }
@@ -63,14 +64,13 @@ mkdir-(){ mkdir $v --parents -- "$@"; }
 rmdir-(){ rmdir $v --parents --ignore-fail-on-non-empty -- "$@"; }
 
 isonlydir(){ # checks if $2 contain only $1 (sub directory included) # todo: berrer explain this fn
-	local a=("${2%/}"/*)
-	[[ ${#a[@]} = 1 && -e $a && ${1%/} = "${a#./}"?(/*) ]]
+	local a=("${2%/}"/*) # shopt -s nullglob dotglob
+	[[ ${#a[@]} = 1 && ${1%/} = "${a#./}"?(/*) ]]
 }
-# I think its done: TODO: loop untill find emty dir with 1 file, ask confirm add send to upper_dir fn.  # is it nessesary?
 
 isemptydir(){ # checks is the directory empty
-	local a=("${1%/}"/*)
-	[[ -d $1 && ${#a[@]} = 1 && $a = "${1%/}/*" && ! -e $t ]]
+	local a=("${1%/}"/*) # shopt -s nullglob dotglob
+	[[ -d $1 && ${#a[@]} = 0 && ! -e $t ]]
 }
 
 crmdir(){ # Confirm to Rmdir Dirname
@@ -113,7 +113,7 @@ fi
 	confirm 'Try anyway' n || exit 1
 }
 [[ ! -e $1 ]] && err 'SOURCE file must exist'
-[[ ${1%/} = $2 && ( $2 != */ || ${2%/*}/${1##*/} = $2 ) ]] && err 'SOURCE and TARGET are the same file'
+[[ ${1%/} = "$2" && ( $2 != */ || ${2%/*}/${1##*/} = "$2" ) ]] && err 'SOURCE and TARGET are the same file'
 
 
 inner_dir(){
