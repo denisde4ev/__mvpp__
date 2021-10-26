@@ -89,7 +89,7 @@ flag_n=''
 flag_t=''
 flag_Q=''
 flag_V=''
-flag_F=1
+flag_F=3
 
 { # parse args
 to_shift=$#
@@ -326,21 +326,29 @@ case $(file_type "$target_d") in # ensure $target_d is dir
 esac
 
 
-# echo target:$(file_type "$target")
-# exit 123
 tmp=~$$~
+
+
 mv_swap() {
 	mvT_ -- "$1" "$1$tmp" && \
 	mvT_ -- "$2" "$1" && \
 	mvT_ -- "$1$tmp" "$2"
 }
-	# cleanup_dir ""
 
 
-# TODOS:
+# TODOs:
 # treat - as stdin and use cat
 # add (-m 777) for mode option
 # add -F arswer yes for action questions, -F + -f means remeve files that are in target
+# don't alow normal mv when target is not target directory *[!/] and target exist
+
+main_prompt() {
+	prompt y$flag_F "$@" || case $? in
+		1) false;;
+		3|*) err_code prompt;;
+	esac
+}
+
 
 files=$source_missing:$(case $flag_t in 1) echo ' ';;*) file_type "$target"; esac)
 # echo --$files--
@@ -351,21 +359,40 @@ case $mode in
 				# mvT_ -- "$@" "$target"
 			# }
 		case $files in [!_]:[!_]) # both exist
+
 			case $target in *[!/])
 				case $# in 1 )
 
-					if prompt y$flag_F 'swap files?'; then # todo?: prompt_wrapper fn
+					main_prompt "swap files?" && {
 						mv_swap "$@" "$target" || err_code mv_swap
 						exit
-					else
-						case $? in
-							1) ;;
-							3|*) err_code prompt;;
-						esac
-					fi
+					}
 					
 				esac
 			esac
+
+		esac
+
+
+		case $files in [!_]:?) #when source exist and targt does not
+
+			case $target in
+				*/)
+					case $flag_t in
+						1) true;;
+						*) false;; # dont use regular mv when for exmple 'mv a b/'
+					esac
+				;;
+				*) true;;
+			esac && {
+
+				main_prompt "use regular mv?" && {
+					mvT_ "$@" "$target" || err_code mv
+					exit
+				}
+
+			}
+
 		esac
 	;;
 	ln) # todo: check to update link
@@ -376,17 +403,17 @@ case $mode in
 	;;
 esac
 ######################
-		exit 111
-	;;
-
-	cp:?:1)
-		case ${flag_f:-0}:${flag_i:-0} in
-			1:?|?:1) "$mode" ${flag_f:+-f} ${flag_i:+-i} ${flag_n:+-n} -- "$@" "$target"
-	mv:1:1)
-		case $mode in
-			mv) i=$(prompt y "swap");; # todo
-			ln|cp)
-				case $flag_f in 0) prompt "$target exist"
-	1:0) 
-	0:1
+#		exit 111
+#	;;
+#
+#	cp:?:1)
+#		case ${flag_f:-0}:${flag_i:-0} in
+#			1:?|?:1) "$mode" ${flag_f:+-f} ${flag_i:+-i} ${flag_n:+-n} -- "$@" "$target"
+#	mv:1:1)
+#		case $mode in
+#			mv) i=$(prompt y "swap");; # todo
+#			ln|cp)
+#				case $flag_f in 0) prompt "$target exist"
+#	1:0)
+#	0:1
 
