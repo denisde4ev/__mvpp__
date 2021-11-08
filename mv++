@@ -1,5 +1,5 @@
 #!/bin/bash
-#!/usr/bin/env -S busybox ash
+#!/usr/bin/env ash
 set -u
 
 # const vairables based of anvailable commads:
@@ -53,25 +53,27 @@ else
 	# white=''
 	reset=''
 fi
-err()  { printf "${bold}${o}:${reset} %s\\n" "$1" >&2; exit ${2:-1}; }
-warn() { printf "${bold}${cyan}WARNING:${reset} %s\\n" "$*" >&2; }
+err()  { printf %s\\n "${bold}${o}${reset}: $1" >&2; exit ${2:-1}; }
+warn() { printf %s\\n "${bold}${cyan}WARNING${reset}: $@" >&2; }
+info() { printf %s\\n "${bold}${cyan}INFO LOG${reset}: $@" >&2; }
 err_code() { err "$1 exit code: $?" $?; }
 
 case $o in
 	mv|mv++|mvpp) mode=mv;;
 	ln|ln++|lnpp) mode=ln;;
 	cp|cp++)      mode=cp;;
-	*) err 'unmatched mode';;
+	*) err "unmatched mode";;
 esac
 
 if case ${1:-} in -h|--help) true;; '') [ $# -eq 0 ];; *) false;; esac; then
 	printf %s\\n >&2 \
 		"Usage: $o [-Qifvn] SOURCE DEST" \
 		"       $o [-Qifvn] SOURCE... DIRECTORY/" \
-		"       $o [-Qifvn] [-t DIRECTORY/] SOURCE..." \
+		"       $o [-Qifvn] [-t DIRECTORY] SOURCE..." \
 		"" \
 		"   -[ifv]  is passed to command that supports it" \
 		"   -n      is passed to ln command (if supported)" \
+		"   -t dir  target directory" \
 		"program specific:" \
 		"   -Q      dont prompt, assume default" \
 		"   -V      dont verbose external commands" \
@@ -94,7 +96,7 @@ flag_F=3
 { # parse args
 to_shift=$#
 last_nonarg=''
-while :; do
+while :; do # for empty args is already tested in 'Usage'
 	case $1 in
 		--)
 			to_shift=$(( to_shift - 1 ))
@@ -107,19 +109,19 @@ while :; do
 			done
 			break
 		;;
-		--*) err 'long args are not yet supported';;
+		--*) err "long args are not yet supported";;
 		-[!-]*)
 
 			OPTIND=1 # reset getopts
-			while getopts :fnivtF:QV i; do # todo unmatch --
+			while getopts :fnivt:QVF i; do # todo unmatch --
 				case $i in
 					f) flag_f=1;;
 					n) flag_n=1;;
 					i) flag_i=1;;
 					v) flag_v=1;;
 					t)
-						case $flag_t in 1) err 'multiple target directories specified'; esac
-						case $(( to_shift - OPTIND + 1 )) in -*) err 'option requires an argument -- t'; esac
+						case $flag_t in 1) err "multiple target directories specified"; esac
+						case $(( to_shift - OPTIND + 1 )) in -*) err "option requires an argument -- t"; esac
 						flag_t=1; target_d=$OPTARG
 					;;
 					Q) flag_Q=1;;
@@ -131,7 +133,7 @@ while :; do
 				case $(( to_shift - OPTIND + 1 )) in
 					[1-9]*) ;;
 					0) break;;
-					*) err 'err parsing args' 4;;
+					*) err "err parsing args" 4;;
 				esac
 
 			done
@@ -142,36 +144,38 @@ while :; do
 
 			to_shift=$(( to_shift - OPTIND + 1 ))
 			{ # test if getopts got to '--'
-				shift $(( OPTIND - 2 )) || err 'err parsing args' 2
-				case $1 in --) to_shift=$(( to_shift + 1 )); continue; esac
+			shift $(( OPTIND - 2 )) || err "err parsing args" 2
+			case $1 in --) to_shift=$(( to_shift + 1 )); continue; esac
+			shift || err "err parsing args" 6
 			}
-			shift || err 'err parsing args' 6
-			case $to_shift in -*) err 'err parsing args' 3;; 0) break; esac
-
+			case $to_shift in -*) err "err parsing args" 3;; 0) break; esac
+			continue
 		;;
 		*) set -- "$@" "$last_nonarg"; last_nonarg=$1;;
 	esac
 	to_shift=$(( to_shift - 1 ))
-	shift || err 'err parsing args' 5 # TODO: check if arguments are already cnsumed -> does shift has to be 1 line after 'case in 0) break' line
+	shift || err "err parsing args" 5
 	case $to_shift in 0) break; esac
 done
-shift $(( to_shift + 1 )) # +1 for missed last_nonarg
+shift $(( to_shift + 1 )) || err "err parsing args" 7 # +1 for missed last_nonarg
 case $flag_t in
 	1) set -- "$@" "$last_nonarg";;
 	*) target=$last_nonarg;;
 esac
+#unset last_nonarg
+#unset to_shift
 }
 
-case $flag_Q:$flag_i in 1:1) warn 'using contradictory arguments -Q and -i at the same time'; esac
+case $flag_Q:$flag_i in 1:1) warn "using contradictory arguments -Q and -i at the same time"; esac
 
-#{
+# {
 #	# get $target
 #	# not needed arymore, because of $last_nonarg
 #
 #	case ${flag_t}${target_} in '') 
 #		target_=1
 #		if [ $# -lt 2 ]; then
-#			err 'use -h for usage'
+#			err "use -h for usage"
 #		elif [ $# -eq 2 ]; then
 #			target=$2
 #			set -- "$1"
@@ -198,7 +202,7 @@ case $flag_Q:$flag_i in 1:1) warn 'using contradictory arguments -Q and -i at th
 #	;;
 #		*) target_='';;
 #	esac
-#}
+# }
 
 case $flag_V in
 	1) v(){ "$@"; };;
@@ -210,7 +214,6 @@ rm_()    { v rm                  ${flag_i:+$rm_supports_i} ${flag_f:+$rm_support
 mv_()    { v mv                  ${flag_i:+$mv_supports_i} ${flag_f:+$mv_supports_f} ${flag_v:+$mv_supports_v} "$@"; }
 ln_()    { v ln                  ${flag_i:+$ln_supports_i} ${flag_f:+$ln_supports_f} ${flag_v:+$ln_supports_v} "$@"; }
 cp_()    { v cp                  ${flag_i:+$cp_supports_i} ${flag_f:+$cp_supports_f} ${flag_v:+$cp_supports_v} "$@"; }
-rmT_()   { v rm  $rm_supports_T  ${flag_i:+$rm_supports_i} ${flag_f:+$rm_supports_f} ${flag_v:+$rm_supports_v} "$@"; }
 mvT_()   { v mv  $mv_supports_T  ${flag_i:+$mv_supports_i} ${flag_f:+$mv_supports_f} ${flag_v:+$mv_supports_v} "$@"; }
 lnT_()   { v ln  $ln_supports_T  ${flag_i:+$ln_supports_i} ${flag_f:+$ln_supports_f} ${flag_v:+$ln_supports_v} "$@"; }
 cpT_()   { v cp  $cp_supports_T  ${flag_i:+$cp_supports_i} ${flag_f:+$cp_supports_f} ${flag_v:+$cp_supports_v} "$@"; }
@@ -247,10 +250,17 @@ IFS='
 		*) return "${1#?}";;
 	esac
 }
+main_prompt() {
+	prompt y$flag_F "$@" || case $? in
+		1) false;;
+		3|*) err_code prompt;;
+	esac
+}
+
 
 file_type() {
 	[ -L "$1" ] && { echo l; return; }
-	[ -e "$1" ] || { echo _; return 1; }
+	[ -e "$1" ] || { echo z; return 1; }
 	if [ -f "$1" ]; then
 		echo f
 	elif [ -d "$1" ]; then
@@ -261,26 +271,40 @@ file_type() {
 }
 
 does_not_exist() {
-	case $(file_type "$1") in
-		_) return 0;;
-		*) return 1;;
-	esac
+	! [ -e "$1" ]
 }
+
+# is_empty_dir() {
+# 	[ -d "$1" ] && \
+# 	set -- "$1"/* && \
+# 	[ ! -e "$1" ]
+# }
+# 
+# is_not_empty_dir() {
+# 	[ -d "$1" ] && \
+# 	set -- "$1"/* && \
+# 	[ -e "$1" ]
+# }
+
 
 sources=''
 # fill $sources from arguments (1 arg to 1 char)
 for i; do sources=${sources}$(file_type "$i"); done
+
 source_missing=0
-case $sources in *_*) # if 1 missing file
+case $sources in *z*) # if 1 missing file
 	case $sources in
 		#                                            if (prompt get err) or (answer is equal to y)
-		*[!_]*) source_missing=1; prompt n3 "Some surce files doesn't exist, exit now?";;
-		*)      source_missing=_; prompt y3  "All surce files doesn't exist, exit now?";;
+		*[!z]*) source_missing=1; prompt n3 "Some surce files doesn't exist, exit now?";;
+		*)      source_missing=9; prompt y3  "All surce files doesn't exist, exit now?";;
 	esac
 	case $? in
-		0|3) exit;; # exit using last exit status only when 0 or 3
+		0) exit 2;;
+		3) exit;;
+		# exit using last exit status only when 0 or 3
 	esac
 esac
+target_type=$(case $flag_t in 1) echo D;;*) file_type "$target"; esac)
 
 
 case $flag_t in # ensure $target_d and $target has value
@@ -290,10 +314,10 @@ case $flag_t in # ensure $target_d and $target has value
 			'') target_d=''; err "vars 'target_d' and 'target' can't be empty";;
 			*/) target_d=${target%/};;
 			*/*)
-				case $# in
-					2) ;;
-					*) err "dont use target without '/' at the , use --help for usage"
-				 esac
+				#case $# in # TODO: should it be romoved, this lines?
+				#	2) ;;
+				#	*) err "dont use target without '/' at the , use --help for usage"
+				#esac
 				target_d=${target%/*}
 			;;
 			*) target_d=.;;
@@ -303,21 +327,25 @@ esac
 
 # case $flag_F:$flag_f in 1:1) i=0
 
-case $(file_type "$target_d") in # ensure $target_d is dir
+case $(file_type "${target_d%/}") in # ensure $target_d is dir
 	d) ;; # $target dir is dir, all ok
-	_)
-		prompt y$flag_F "create target directory: '$target_d'" && mkdir_ -p -- "$target_d"
+	z)
+		if prompt y0 "create target directory: '$target_d'"; then
+			mkdir_ -p -- "$target_d" || err_code mkdir
+		else
+			err "can't continue without non existing target directory"
+		fi
 	;;
 	.)
 		prompt n$flag_F \
 			"target directory already exist and is not a directory," \
-			"delete/move?" \
+			"do you want to ${bold}delete/backup${reset} it?" \
 		|| exit
 
 		prinftf %s\\n "what operitoin should be done to '$target_d'" >&2
 		if prompt n3 'delete?'; then
 			rm_ -- "$target_d" || err_code rm
-		elif prompt n3 'rename by appending "~" to name?'; then
+		elif prompt n3 "rename by appending '~' to name ${bold}(backup)${reset}?"; then
 			does_not_exist "$target_d"~ || err "err '${target_d}~' already exist" 7
 			mvT_ -- "$target_d" "$target_d"~ || err_code mv
 		fi
@@ -328,8 +356,8 @@ esac
 
 tmp=~$$~
 
-
 mv_swap() {
+	[ -e "$1$tmp" ] && err "file '$1$tmp' should not exist"
 	mvT_ -- "$1" "$1$tmp" && \
 	mvT_ -- "$2" "$1" && \
 	mvT_ -- "$1$tmp" "$2"
@@ -337,60 +365,50 @@ mv_swap() {
 
 
 # TODOs:
-# treat - as stdin and use cat
-# add (-m 777) for mode option
-# add -F arswer yes for action questions, -F + -f means remeve files that are in target
-# don't alow normal mv when target is not target directory *[!/] and target exist
-
-main_prompt() {
-	prompt y$flag_F "$@" || case $? in
-		1) false;;
-		3|*) err_code prompt;;
-	esac
-}
+# - treat - as stdin and use cat
+# - add (-m 777) for mode option
+# - add -F arswer yes for action questions, -F + -f means remeve files that are in target
+# - don't alow normal mv when target is not target directory *[!/] and target exist
+# - allow to use . as target dir without 'mv++ a ./' "./"
 
 
-files=$source_missing:$(case $flag_t in 1) echo ' ';;*) file_type "$target"; esac)
-# echo --$files--
+files=$source_missing:$target_type
+info "--$files--"
 case $mode in
 	mv)
-		# case $files in [!_]:_) # only target does not exist
-			# confirl y1 'use normal mv' && {
-				# mvT_ -- "$@" "$target"
-			# }
-		case $files in [!_]:[!_]) # both exist
+
+		case $files in [!Z]:[!zD]) # (at least 1 exist):(exist and is not flag_t)
 
 			case $target in *[!/])
-				case $# in 1 )
+				case $# in
+					0) ;; # todo: does 0 sources have to throw err
+					1)
 
-					main_prompt "swap files?" && {
-						mv_swap "$@" "$target" || err_code mv_swap
-						exit
-					}
-					
+						main_prompt "swap files?" && {
+							mv_swap "$@" "$target" || err_code mv_swap
+							exit
+						}
+					;;
+
 				esac
 			esac
 
 		esac
 
+		# { # test if source is in target directory
 
-		case $files in [!_]:?) #when source exist and targt does not
+		# 	for i; do
+		# 		case $i in
+		# 	done
 
-			case $target in
-				*/)
-					case $flag_t in
-						1) true;;
-						*) false;; # dont use regular mv when for exmple 'mv a b/'
-					esac
-				;;
-				*) true;;
-			esac && {
+		# }
 
-				main_prompt "use regular mv?" && {
-					mvT_ "$@" "$target" || err_code mv
-					exit
-				}
 
+		case $files in [!zZ]:[zD]) #when source exist and targt does not, (not including any target dirctory)
+
+			main_prompt "use regular mv?" && {
+				mvT_ "$@" "$target" || err_code mv
+				exit
 			}
 
 		esac
@@ -402,18 +420,6 @@ case $mode in
 		echo not match
 	;;
 esac
-######################
-#		exit 111
-#	;;
-#
-#	cp:?:1)
-#		case ${flag_f:-0}:${flag_i:-0} in
-#			1:?|?:1) "$mode" ${flag_f:+-f} ${flag_i:+-i} ${flag_n:+-n} -- "$@" "$target"
-#	mv:1:1)
-#		case $mode in
-#			mv) i=$(prompt y "swap");; # todo
-#			ln|cp)
-#				case $flag_f in 0) prompt "$target exist"
-#	1:0)
-#	0:1
 
+echo NOTHING TO DO
+exit 111
