@@ -2,87 +2,22 @@
 #!/usr/bin/env ash
 set -u
 
-# const vairables based of anvailable commads:
-mkdir_supports_v=-v
+script_dir=${0%/*}; : "${script_dir:=/}"
 
-rmdir_supports_v=-v
-
-rm_supports_i=-i #
-rm_supports_f=-f #
-rm_supports_v=-v
-
-mv_supports_i=-i #
-mv_supports_f=-f #
-mv_supports_v=-v
-mv_supports_T=-T
-
-ln_supports_i=-i
-ln_supports_f=-f #
-ln_supports_v=-v
-ln_supports_n=-n
-ln_supports_T=-T
-
-cp_supports_i=-i #
-cp_supports_f=-f #
-cp_supports_v=-v
-cp_supports_T=-T
-
+. "$script_dir"/config-vars.sh
 
 o=${0##*/}
 
-if [ -x "$(command -v tput)" ]; then
-	bold="$(tput bold)"
-	# black="$(tput setaf 0)"
-	# red="$(tput setaf 1)"
-	# green="$(tput setaf 2)"
-	# yellow="$(tput setaf 3)"
-	# blue="$(tput setaf 4)"
-	# magenta="$(tput setaf 5)"
-	cyan="$(tput setaf 6)"
-	# white="$(tput setaf 7)"
-	reset="$(tput sgr0)"
-else
-	bold=''
-	# black=''
-	# red=''
-	# green=''
-	# yellow=''
-	# blue=''
-	# magenta=''
-	cyan=''
-	# white=''
-	reset=''
-fi
-err()  { printf %s\\n "${bold}${o}${reset}: $1" >&2; exit ${2:-1}; }
-warn() { printf %s\\n "${bold}${cyan}WARNING${reset}: $@" >&2; }
-info() { printf %s\\n "${bold}${cyan}INFO LOG${reset}: $@" >&2; }
-err_code() { err "$1 exit code: $?" $?; }
+. "$script_dir"/prints.sh
 
 case $o in
-	mv|mv++|mvpp) mode=mv;;
+	# mv|mv++|mvpp) mode=mv;;
 	ln|ln++|lnpp) mode=ln;;
 	cp|cp++)      mode=cp;;
-	*) err "unmatched mode";;
+	mv-ln)        mode=mv-ln;;
+	*) err "err, unmatched mode";;
 esac
 
-if case ${1:-} in -h|--help) true;; '') [ $# -eq 0 ];; *) false;; esac; then
-	printf %s\\n >&2 \
-		"Usage: $o [-Qifvn] SOURCE DEST" \
-		"       $o [-Qifvn] SOURCE... DIRECTORY/" \
-		"       $o [-Qifvn] [-t DIRECTORY] SOURCE..." \
-		"" \
-		"   -[ifv]  is passed to command that supports it" \
-		"   -n      is passed to ln command (if supported)" \
-		"   -t dir  target directory" \
-		"program specific:" \
-		"   -Q      dont prompt, assume default" \
-		"   -V      dont verbose external commands" \
-		"   -F      answer yes for action questions, used for scripts" \
-		"" \
-		"If some of arguments are not supported by buildins commands, edit first few lines of this script" \
-	;
-	[ $# -ne 0 ]; exit
-fi
 
 flag_i=''
 flag_f=''
@@ -91,201 +26,16 @@ flag_n=''
 flag_t=''
 flag_Q=''
 flag_V=''
-flag_F=3
+flag_F=3 # todo: dont use flag var like this
 
-{ # parse args
-to_shift=$#
-last_nonarg=''
-while :; do # for empty args is already tested in 'Usage'
-	case $1 in
-		--)
-			to_shift=$(( to_shift - 1 ))
-			shift
-			while [ $to_shift -ne 0 ]; do
-				set -- "$@" "$last_nonarg"
-				last_nonarg=$1
-				to_shift=$(( to_shift - 1 ))
-				shift
-			done
-			break
-		;;
-		--*) err "long args are not yet supported";;
-		-[!-]*)
+. "$script_dir"/parse-args.sh
 
-			OPTIND=1 # reset getopts
-			while getopts :fnivt:QVF i; do # todo unmatch --
-				case $i in
-					f) flag_f=1;;
-					n) flag_n=1;;
-					i) flag_i=1;;
-					v) flag_v=1;;
-					t)
-						case $flag_t in 1) err "multiple target directories specified"; esac
-						case $(( to_shift - OPTIND + 1 )) in -*) err "option requires an argument -- t"; esac
-						flag_t=1; target_d=$OPTARG
-					;;
-					Q) flag_Q=1;;
-					V) flag_V=1;;
-					F) flag_F=0;;
-					:) err "option requires an argument -- ${OPTARG:?}";;
-					?) err "Illegal option -${OPTARG:?}"
-				esac
-				case $(( to_shift - OPTIND + 1 )) in
-					[1-9]*) ;;
-					0) break;;
-					*) err "err parsing args" 4;;
-				esac
+. "$script_dir"/wrappers.sh
 
-			done
-			case $? in
-				0|1) ;;
-				2|*) exit;;
-			esac
-
-			to_shift=$(( to_shift - OPTIND + 1 ))
-			{ # test if getopts got to '--'
-			shift $(( OPTIND - 2 )) || err "err parsing args" 2
-			case $1 in --) to_shift=$(( to_shift + 1 )); continue; esac
-			shift || err "err parsing args" 6
-			}
-			case $to_shift in -*) err "err parsing args" 3;; 0) break; esac
-			continue
-		;;
-		*) set -- "$@" "$last_nonarg"; last_nonarg=$1;;
-	esac
-	to_shift=$(( to_shift - 1 ))
-	shift || err "err parsing args" 5
-	case $to_shift in 0) break; esac
-done
-shift $(( to_shift + 1 )) || err "err parsing args" 7 # +1 for missed last_nonarg
-case $flag_t in
-	1) set -- "$@" "$last_nonarg";;
-	*) target=$last_nonarg;;
-esac
-#unset last_nonarg
-#unset to_shift
-}
-
-case $flag_Q:$flag_i in 1:1) warn "using contradictory arguments -Q and -i at the same time"; esac
-
-# {
-#	# get $target
-#	# not needed arymore, because of $last_nonarg
-#
-#	case ${flag_t}${target_} in '') 
-#		target_=1
-#		if [ $# -lt 2 ]; then
-#			err "use -h for usage"
-#		elif [ $# -eq 2 ]; then
-#			target=$2
-#			set -- "$1"
-#		# WARNING: shell detection
-#		else case ${BASH_VERSION:-${ZSH_VERSION:-${KSH_VERSION:-}}} in
-#			?*)
-#				target=${@:$#:1}
-#				set -- "${@:1:$#-1}"
-#			;;
-#			*)
-#
-#				{
-#					# assuming 'busybox ash', but if is 'dash/yash/mksh/posh' then will get syntax error
-#					i=$#
-#					target="${@:$#*2-2:1}" && \
-#					set -- "${@:0:$#*2-3}" && \
-#					[ $# -eq $(( i - 1 )) ]
-#				} || {
-#					err "getting last argument went wrong!"
-#				}
-#	
-#			;;
-#		esac; fi
-#	;;
-#		*) target_='';;
-#	esac
-# }
-
-case $flag_V in
-	1) v(){ "$@"; };;
-	*) v() { (PS4=' \$ ';set -x; "$@") };;
-esac
-mkdir_() { v mkdir ${flag_v:+$mkdir_supports_v} "$@"; }
-rmdir_() { v rmdir ${flag_v:+$rmdir_supports_v} "$@"; }
-rm_()    { v rm                  ${flag_i:+$rm_supports_i} ${flag_f:+$rm_supports_f} ${flag_v:+$rm_supports_v} "$@"; }
-mv_()    { v mv                  ${flag_i:+$mv_supports_i} ${flag_f:+$mv_supports_f} ${flag_v:+$mv_supports_v} "$@"; }
-ln_()    { v ln                  ${flag_i:+$ln_supports_i} ${flag_f:+$ln_supports_f} ${flag_v:+$ln_supports_v} "$@"; }
-cp_()    { v cp                  ${flag_i:+$cp_supports_i} ${flag_f:+$cp_supports_f} ${flag_v:+$cp_supports_v} "$@"; }
-mvT_()   { v mv  $mv_supports_T  ${flag_i:+$mv_supports_i} ${flag_f:+$mv_supports_f} ${flag_v:+$mv_supports_v} "$@"; }
-lnT_()   { v ln  $ln_supports_T  ${flag_i:+$ln_supports_i} ${flag_f:+$ln_supports_f} ${flag_v:+$ln_supports_v} "$@"; }
-cpT_()   { v cp  $cp_supports_T  ${flag_i:+$cp_supports_i} ${flag_f:+$cp_supports_f} ${flag_v:+$cp_supports_v} "$@"; }
+. "$script_dir"/prompt.sh
 
 
-
-prompt() {
-	# arg1 is 2 characters, for example: 'y0' default answer is 'y'
-	# and if error or non '[YyNn]*' answer given will return status 0.
-	# When flag_Q retrun status is always the fallback 
-
-
-	case $flag_Q in 1) return "${1#?}"; esac
-
-
-	case $1 in
-		y*) prompt_yn='[Y/n]';;
-		n*) prompt_yn='[y/N]';;
-		*) prompt_yn='[y/n]';;
-	esac
-	(
-IFS='
-' # concat $* using new line
-		shift
-		printf %s "$* $prompt_yn " >&2
-	)
-
-	respond=_
-	read respond || return "${1#?}"
-
-	case ${respond:-$1} in
-		[Yy]*) return 0;;
-		[Nn]*) return 1;;
-		*) return "${1#?}";;
-	esac
-}
-main_prompt() {
-	prompt y$flag_F "$@" || case $? in
-		1) false;;
-		3|*) err_code prompt;;
-	esac
-}
-
-
-file_type() {
-	[ -L "$1" ] && { echo l; return; }
-	[ -e "$1" ] || { echo z; return 1; }
-	if [ -f "$1" ]; then
-		echo f
-	elif [ -d "$1" ]; then
-		echo d
-	else
-		echo .
-	fi
-}
-
-does_not_exist() {
-	! [ -e "$1" ]
-}
-
-# is_empty_dir() {
-# 	[ -d "$1" ] && \
-# 	set -- "$1"/* && \
-# 	[ ! -e "$1" ]
-# }
-# 
-# is_not_empty_dir() {
-# 	[ -d "$1" ] && \
-# 	set -- "$1"/* && \
-# 	[ -e "$1" ]
-# }
-
+. "$script_dir"/test-file-fns.sh
 
 sources=''
 # fill $sources from arguments (1 arg to 1 char)
@@ -304,7 +54,6 @@ case $sources in *z*) # if 1 missing file
 		# exit using last exit status only when 0 or 3
 	esac
 esac
-target_type=$(case $flag_t in 1) echo D;;*) file_type "$target"; esac)
 
 
 case $flag_t in # ensure $target_d and $target has value
@@ -372,6 +121,7 @@ mv_swap() {
 # - allow to use . as target dir without 'mv++ a ./' "./"
 
 
+target_type=$(case $flag_t in 1) echo D;;*) file_type "$target"; esac)
 files=$source_missing:$target_type
 info "--$files--"
 case $mode in
