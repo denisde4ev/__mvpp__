@@ -11,7 +11,7 @@ o=${0##*/}
 . "$script_dir"/prints.sh
 
 case $o in
-	# mv|mv++|mvpp) mode=mv;;
+	mv|mv++|mvpp) mode=mv;;
 	ln|ln++|lnpp) mode=ln;;
 	cp|cp++)      mode=cp;;
 	mv-ln)        mode=mv-ln;;
@@ -27,6 +27,7 @@ flag_t=''
 flag_Q=''
 flag_V=''
 flag_F=3 # todo: dont use flag var like this
+flag_L='' # not used for now
 
 . "$script_dir"/parse-args.sh
 
@@ -167,7 +168,7 @@ case $mode in
 		echo match
 	;;
 	*)
-		echo not match
+		err 'unknown ivokation name'
 	;;
 esac
 

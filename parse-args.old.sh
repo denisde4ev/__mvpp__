@@ -11,7 +11,7 @@
 #			target=$2
 #			set -- "$1"
 #		# WARNING: shell detection
-#		else case ${BASH_VERSION:-${ZSH_VERSION:-${KSH_VERSION:-}}} in
+#		else case ${BASH_VERSION:-${ZSH_VERSION:-${KSH_VERSION-}}} in
 #			?*)
 #				target=${@:$#:1}
 #				set -- "${@:1:$#-1}"

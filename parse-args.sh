@@ -1,19 +1,18 @@
 
-if case ${1:-} in -h|--help) true;; '') [ $# -eq 0 ];; *) false;; esac; then
+if case ${1-} in -h|--help) true;; '') [ $# -eq 0 ];; *) false;; esac; then
 	printf %s\\n >&2 \
 		"Usage: $o [-Qifvn] SOURCE DEST" \
 		"       $o [-Qifvn] SOURCE... DIRECTORY/" \
 		"       $o [-Qifvn] [-t DIRECTORY] SOURCE..." \
 		"" \
-		"   -[ifv]  is passed to command that supports it" \
-		"   -n      is passed to ln command (if supported)" \
-		"   -t dir  target directory" \
+		"   -[ifv]     is passed to commands that supports it" \
+		"   -n         is passed to ln commands (if supported)" \
+		"   -t dir     target directory" \
 		"program specific:" \
-		"   -Q      dont prompt, assume default" \
-		"   -V      dont verbose external commands" \
-		"   -F      answer yes for action questions, used for scripts" \
-		"" \
-		"If some of arguments are not supported by buildins commands, edit first few lines of this script" \
+		"   -Q         dont prompt, assume default" \
+		"   -V         dont verbose external commands" \
+		"   -F         answer yes for action questions, used for scripts" \
+		"   -L <dir>   update links for the moved files in that folder" \
 	;
 	[ $# -ne 0 ]; exit
 fi
